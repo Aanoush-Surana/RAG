@@ -1,0 +1,338 @@
+"""
+visualize_graph.py
+──────────────────
+Parses a Python repo using the v4_metadata parser, builds the chunk
+relationship graph, and exports a self-contained interactive HTML file
+(D3.js force-directed) — no extra Python packages required beyond what
+v4_metadata.py already uses.
+
+Run:
+    python visualize_graph.py
+Output:
+    chunk_graph.html   ← open in any browser
+"""
+
+import json
+import os
+import sys
+
+# ── Allow importing from the same directory ────────────────────────────────
+sys.path.insert(0, os.path.dirname(__file__))
+
+from v4_metadata import load_hierarchical_repo, build_reverse_index
+
+# =============================================================================
+# CONFIG – edit repo path here
+# =============================================================================
+REPO_PATH   = r"C:\Users\Aanoush Surana\OneDrive\Desktop\BTP\data\sample_repo"
+OUTPUT_HTML = os.path.join(os.path.dirname(__file__), "chunk_graph.html")
+
+# =============================================================================
+# BUILD GRAPH DATA  (nodes + edges)
+# =============================================================================
+
+def build_graph(chunks):
+    """
+    Nodes  – one per chunk  (name, type, file, docstring)
+    Edges  – three relationship types:
+               'calls'       caller → callee
+               'inherits'    subclass → base class
+               'in_file'     chunk → file  (optional, toggle in UI)
+    """
+    nodes = []
+    edges = []
+
+    # Index chunk name → node id (use chunk index as id)
+    name_to_ids = {}
+    for i, c in enumerate(chunks):
+        name_to_ids.setdefault(c["name"], []).append(i)
+
+    for i, c in enumerate(chunks):
+        nodes.append({
+            "id":       i,
+            "name":     c["name"],
+            "type":     c["type"],
+            "file":     os.path.basename(c["file"]),
+            "doc":      c.get("docstring", "")[:80],
+            "methods":  c.get("methods", []),
+            "bases":    c.get("base_classes", []),
+        })
+
+    edge_set = set()
+
+    def add_edge(src, tgt, kind):
+        key = (src, tgt, kind)
+        if key not in edge_set:
+            edge_set.add(key)
+            edges.append({"source": src, "target": tgt, "kind": kind})
+
+    for i, c in enumerate(chunks):
+        # calls edges
+        for callee in c.get("calls", []):
+            for j in name_to_ids.get(callee, []):
+                if j != i:
+                    add_edge(i, j, "calls")
+
+        # inheritance edges
+        for base in c.get("base_classes", []):
+            for j in name_to_ids.get(base, []):
+                if j != i:
+                    add_edge(i, j, "inherits")
+
+    return nodes, edges
+
+
+# =============================================================================
+# HTML TEMPLATE  (D3 v7 force-directed, self-contained)
+# =============================================================================
+HTML_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Chunk Relationship Graph</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d1117; font-family: 'Segoe UI', sans-serif; color: #e6edf3; overflow: hidden; }
+
+  #toolbar {
+    position: fixed; top: 0; left: 0; right: 0; height: 48px;
+    background: #161b22; border-bottom: 1px solid #30363d;
+    display: flex; align-items: center; gap: 16px; padding: 0 20px; z-index: 10;
+  }
+  #toolbar h1 { font-size: 14px; font-weight: 600; color: #58a6ff; letter-spacing:.5px; }
+  #toolbar label { font-size: 12px; color: #8b949e; display:flex; align-items:center; gap:6px; cursor:pointer; }
+  #toolbar input[type=checkbox] { accent-color: #58a6ff; }
+  #search {
+    margin-left: auto; padding: 4px 10px; border-radius: 6px;
+    border: 1px solid #30363d; background: #0d1117; color: #e6edf3; font-size: 12px; width: 180px;
+  }
+
+  #canvas { position: fixed; top: 48px; left: 0; width: 100%; height: calc(100vh - 48px); }
+
+  /* node colors by type */
+  .node-class    { fill: #388bfd; }
+  .node-function { fill: #3fb950; }
+  .node-file     { fill: #d2a8ff; }
+
+  .node circle { stroke: #0d1117; stroke-width: 1.5px; transition: r .15s; }
+  .node:hover circle { stroke: #fff; stroke-width: 2px; }
+  .node text { font-size: 10px; fill: #e6edf3; pointer-events: none; text-anchor: middle; dy: "0.35em"; }
+
+  /* edge colors */
+  .link-calls    { stroke: #3fb950; stroke-opacity: .55; }
+  .link-inherits { stroke: #f78166; stroke-opacity: .75; }
+
+  /* tooltip */
+  #tooltip {
+    position: fixed; background: #161b22; border: 1px solid #30363d;
+    border-radius: 8px; padding: 10px 14px; font-size: 12px; pointer-events: none;
+    max-width: 280px; line-height: 1.6; display: none; z-index: 20;
+    box-shadow: 0 4px 24px #00000088;
+  }
+  #tooltip strong { color: #58a6ff; }
+  #tooltip .tag { display:inline-block; padding:1px 6px; border-radius:4px; font-size:10px; margin-right:4px; }
+  .tag-class    { background:#1f3a5f; color:#79c0ff; }
+  .tag-function { background:#1a3a24; color:#56d364; }
+  .tag-file     { background:#2d1f4a; color:#d2a8ff; }
+
+  #legend {
+    position: fixed; bottom: 16px; left: 16px; background: #161b22;
+    border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px; font-size: 11px; z-index: 10;
+  }
+  #legend h3 { font-size: 11px; color:#8b949e; margin-bottom:6px; text-transform:uppercase; letter-spacing:.5px; }
+  .leg { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+  .leg-dot { width:10px; height:10px; border-radius:50%; }
+  .leg-line { width:20px; height:2px; }
+
+  #stats {
+    position: fixed; bottom: 16px; right: 16px; background: #161b22;
+    border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px; font-size: 11px;
+    color: #8b949e; z-index: 10;
+  }
+  #stats span { color: #e6edf3; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>🔗 Chunk Relationship Graph</h1>
+  <label><input type="checkbox" id="chk-calls" checked> <span style="color:#3fb950">calls</span></label>
+  <label><input type="checkbox" id="chk-inherits" checked> <span style="color:#f78166">inherits</span></label>
+  <label><input type="checkbox" id="chk-labels" checked> Labels</label>
+  <input id="search" placeholder="Search node…" type="text"/>
+</div>
+
+<svg id="canvas"></svg>
+<div id="tooltip"></div>
+
+<div id="legend">
+  <h3>Legend</h3>
+  <div class="leg"><div class="leg-dot" style="background:#388bfd"></div> class</div>
+  <div class="leg"><div class="leg-dot" style="background:#3fb950"></div> function</div>
+  <div class="leg"><div class="leg-dot" style="background:#d2a8ff"></div> file</div>
+  <div class="leg" style="margin-top:6px"><div class="leg-line" style="background:#3fb950"></div> calls</div>
+  <div class="leg"><div class="leg-line" style="background:#f78166"></div> inherits</div>
+</div>
+
+<div id="stats">
+  Nodes: <span id="s-nodes">0</span> &nbsp; Edges: <span id="s-edges">0</span>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script>
+const GRAPH = __GRAPH_JSON__;
+
+const svg    = d3.select("#canvas");
+const W      = () => window.innerWidth;
+const H      = () => window.innerHeight - 48;
+
+const g      = svg.append("g");
+const tip    = document.getElementById("tooltip");
+
+document.getElementById("s-nodes").textContent = GRAPH.nodes.length;
+document.getElementById("s-edges").textContent = GRAPH.edges.length;
+
+// ── Color map ─────────────────────────────────────────────────────────────
+const colorMap = { class: "#388bfd", function: "#3fb950", file: "#d2a8ff" };
+
+// ── Zoom ──────────────────────────────────────────────────────────────────
+svg.call(d3.zoom().scaleExtent([.2, 4])
+  .on("zoom", e => g.attr("transform", e.transform)));
+
+// ── Arrow markers ─────────────────────────────────────────────────────────
+const defs = svg.append("defs");
+["calls","inherits"].forEach(kind => {
+  const col = kind === "calls" ? "#3fb950" : "#f78166";
+  defs.append("marker")
+    .attr("id", `arrow-${kind}`)
+    .attr("viewBox","0 -4 8 8").attr("refX",16).attr("refY",0)
+    .attr("markerWidth",6).attr("markerHeight",6).attr("orient","auto")
+    .append("path").attr("d","M0,-4L8,0L0,4").attr("fill", col);
+});
+
+// ── Simulation ────────────────────────────────────────────────────────────
+const sim = d3.forceSimulation(GRAPH.nodes)
+  .force("link",   d3.forceLink(GRAPH.edges).id(d=>d.id).distance(110).strength(.6))
+  .force("charge", d3.forceManyBody().strength(-220))
+  .force("center", d3.forceCenter(W()/2, H()/2))
+  .force("collide", d3.forceCollide(24));
+
+// ── Draw links ─────────────────────────────────────────────────────────────
+const linkLayer = g.append("g").attr("class","links");
+let link = linkLayer.selectAll("line")
+  .data(GRAPH.edges).enter().append("line")
+  .attr("class", d => `link-${d.kind}`)
+  .attr("stroke-width", 1.5)
+  .attr("marker-end", d => `url(#arrow-${d.kind})`);
+
+// ── Draw nodes ─────────────────────────────────────────────────────────────
+const nodeLayer = g.append("g").attr("class","nodes");
+let node = nodeLayer.selectAll("g")
+  .data(GRAPH.nodes).enter().append("g")
+  .attr("class","node")
+  .call(d3.drag()
+    .on("start", (e,d) => { if (!e.active) sim.alphaTarget(.3).restart(); d.fx=d.x; d.fy=d.y; })
+    .on("drag",  (e,d) => { d.fx=e.x; d.fy=e.y; })
+    .on("end",   (e,d) => { if (!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }))
+  .on("mouseover", showTip)
+  .on("mousemove", moveTip)
+  .on("mouseout",  hideTip);
+
+node.append("circle")
+  .attr("r", d => d.type === "class" ? 14 : 10)
+  .attr("class", d => `node-${d.type}`);
+
+let labels = node.append("text")
+  .attr("dy", d => (d.type === "class" ? 14 : 10) + 10)
+  .text(d => d.name.length > 16 ? d.name.slice(0,14)+"…" : d.name);
+
+// ── Tick ──────────────────────────────────────────────────────────────────
+sim.on("tick", () => {
+  link
+    .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+    .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+  node.attr("transform", d => `translate(${d.x},${d.y})`);
+});
+
+// ── Tooltip ───────────────────────────────────────────────────────────────
+function showTip(event, d) {
+  const tagCls = `tag tag-${d.type}`;
+  let html = `<strong>${d.name}</strong><br>
+    <span class="${tagCls}">${d.type}</span>
+    <span style="color:#8b949e;font-size:10px">${d.file}</span><br>`;
+  if (d.bases  && d.bases.length)   html += `<br>extends: <em>${d.bases.join(", ")}</em>`;
+  if (d.methods && d.methods.length) html += `<br>methods: ${d.methods.slice(0,6).join(", ")}`;
+  if (d.doc)  html += `<br><span style="color:#8b949e">${d.doc}</span>`;
+  tip.innerHTML = html;
+  tip.style.display = "block";
+  moveTip(event);
+}
+function moveTip(event) {
+  tip.style.left = (event.clientX + 14) + "px";
+  tip.style.top  = (event.clientY + 14) + "px";
+}
+function hideTip() { tip.style.display = "none"; }
+
+// ── Toggle edges ──────────────────────────────────────────────────────────
+function updateVisibility() {
+  const showCalls    = document.getElementById("chk-calls").checked;
+  const showInherits = document.getElementById("chk-inherits").checked;
+  link.style("display", d =>
+    (d.kind === "calls" && !showCalls) || (d.kind === "inherits" && !showInherits)
+      ? "none" : null);
+}
+document.getElementById("chk-calls").addEventListener("change", updateVisibility);
+document.getElementById("chk-inherits").addEventListener("change", updateVisibility);
+
+// ── Toggle labels ─────────────────────────────────────────────────────────
+document.getElementById("chk-labels").addEventListener("change", e => {
+  labels.style("display", e.target.checked ? null : "none");
+});
+
+// ── Search ────────────────────────────────────────────────────────────────
+document.getElementById("search").addEventListener("input", e => {
+  const q = e.target.value.toLowerCase().trim();
+  node.select("circle")
+    .attr("stroke", d => (!q || d.name.toLowerCase().includes(q)) ? "#0d1117" : "#30363d")
+    .attr("stroke-width", d => (!q || d.name.toLowerCase().includes(q)) ? 1.5 : 1)
+    .style("opacity", d => (!q || d.name.toLowerCase().includes(q)) ? 1 : 0.2);
+  labels.style("opacity", d => (!q || d.name.toLowerCase().includes(q)) ? 1 : 0.15);
+});
+
+window.addEventListener("resize", () => sim.force("center", d3.forceCenter(W()/2, H()/2)).alpha(.1).restart());
+</script>
+</body>
+</html>
+"""
+
+# =============================================================================
+# MAIN
+# =============================================================================
+def main():
+    print(f"[Graph] Parsing repo: {REPO_PATH}")
+    chunks = load_hierarchical_repo(REPO_PATH)
+    chunks = [c for c in chunks if len(c["content"]) > 80]
+
+    if not chunks:
+        print("[Graph] No chunks found — check REPO_PATH.")
+        return
+
+    build_reverse_index(chunks)
+    nodes, edges = build_graph(chunks)
+
+    print(f"[Graph] Nodes: {len(nodes)}  |  Edges: {len(edges)}")
+    print(f"[Graph]   calls edges    : {sum(1 for e in edges if e['kind']=='calls')}")
+    print(f"[Graph]   inherits edges : {sum(1 for e in edges if e['kind']=='inherits')}")
+
+    graph_json = json.dumps({"nodes": nodes, "edges": edges}, indent=2)
+    html = HTML_TEMPLATE.replace("__GRAPH_JSON__", graph_json)
+
+    with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
+        f.write(html)
+
+    print(f"[Graph] Saved -> {OUTPUT_HTML}")
+    print("[Graph] Open chunk_graph.html in any browser.")
+
+
+if __name__ == "__main__":
+    main()
