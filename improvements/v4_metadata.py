@@ -1,5 +1,7 @@
 import ast
+import hashlib
 import os
+import re
 import numpy as np
 from collections import defaultdict
 
@@ -84,22 +86,50 @@ def _get_methods(class_node):
 
 
 # =============================================================================
+# CONTENT HASH  –  for deduplicating near-identical chunks across files
+# =============================================================================
+def _content_hash(code_text):
+    """
+    Produce a deterministic hash of normalised source code.
+    Normalisation: collapse runs of whitespace, strip comments.
+    Two chunks with the same hash are considered duplicates.
+    """
+    text = re.sub(r'#[^\n]*', '', code_text)    # strip inline comments
+    text = re.sub(r'\s+', ' ', text).strip()     # collapse whitespace
+    return hashlib.md5(text.encode()).hexdigest()
+
+
+def _make_qname(file_path, name, repo_path=None):
+    """
+    Build a qualified name like  'modules/tracking/tracker.py::TrackerModule'
+    so that same-named functions in different files are disambiguated.
+    """
+    if repo_path:
+        rel = os.path.relpath(file_path, repo_path).replace("\\", "/")
+    else:
+        rel = os.path.basename(file_path)
+    return f"{rel}::{name}"
+
+
+# =============================================================================
 # PARSER  –  produces ONE chunk per semantic unit with rich metadata
 # =============================================================================
-def parse_python_file(file_path):
+def parse_python_file(file_path, repo_path=None):
     """
     Returns a list of chunk dicts for a single .py file.
 
     Each chunk now carries:
-      content       – raw source segment
-      type          – 'class' | 'function' | 'file'
-      file          – absolute file path
-      name          – class/function/file name
-      base_classes  – [str]  (classes only)
-      methods       – [str]  (classes only)
-      calls         – [str]  names of functions called inside this chunk
-      decorators    – [str]
-      docstring     – first docstring, truncated to 200 chars
+      content       - raw source segment
+      type          - 'class' | 'function' | 'file'
+      file          - absolute file path
+      name          - class/function/file name
+      qname         - qualified name  (relative_path::name)
+      content_hash  - md5 of normalised content (for dedup)
+      base_classes  - [str]  (classes only)
+      methods       - [str]  (classes only)
+      calls         - [str]  names of functions called inside this chunk
+      decorators    - [str]
+      docstring     - first docstring, truncated to 200 chars
     """
     try:
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -131,7 +161,9 @@ def parse_python_file(file_path):
                 "type":         "class",
                 "file":         file_path,
                 "name":         node.name,
-                # ── NEW structural metadata ──
+                "qname":        _make_qname(file_path, node.name, repo_path),
+                "content_hash": _content_hash(segment),
+                # ── structural metadata ──
                 "base_classes": _get_base_classes(node),
                 "methods":      _get_methods(node),
                 "calls":        _get_calls(node),
@@ -139,6 +171,7 @@ def parse_python_file(file_path):
                 "docstring":    _get_docstring(node),
                 # reverse index filled later
                 "called_by":    [],
+                "also_in":      [],      # files where duplicate was found
             })
 
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -147,13 +180,16 @@ def parse_python_file(file_path):
                 "type":         "function",
                 "file":         file_path,
                 "name":         node.name,
-                # ── NEW structural metadata ──
+                "qname":        _make_qname(file_path, node.name, repo_path),
+                "content_hash": _content_hash(segment),
+                # ── structural metadata ──
                 "base_classes": [],
                 "methods":      [],
                 "calls":        _get_calls(node),
                 "decorators":   _get_decorators(node),
                 "docstring":    _get_docstring(node),
                 "called_by":    [],
+                "also_in":      [],
             })
 
     if sub_chunks:
@@ -165,13 +201,51 @@ def parse_python_file(file_path):
         "type":         "file",
         "file":         file_path,
         "name":         os.path.basename(file_path),
+        "qname":        _make_qname(file_path, os.path.basename(file_path), repo_path),
+        "content_hash": _content_hash(code),
         "base_classes": [],
         "methods":      [],
         "calls":        _get_calls(tree),
         "decorators":   [],
         "docstring":    "",
         "called_by":    [],
+        "also_in":      [],
     }]
+
+
+# =============================================================================
+# CONTENT-HASH DEDUPLICATION
+# =============================================================================
+def dedup_chunks(chunks):
+    """
+    Remove near-identical chunks (same name + same content hash).
+    When a duplicate is found, the *first* occurrence is kept and the
+    duplicate's file path is recorded in `also_in` so we don't lose
+    provenance information.
+
+    Returns the deduplicated list.
+    """
+    seen = {}           # (name, content_hash) -> index in `unique`
+    unique = []
+
+    for chunk in chunks:
+        key = (chunk["name"], chunk["content_hash"])
+        if key in seen:
+            # Record the duplicate's file for reference
+            unique[seen[key]]["also_in"].append(
+                os.path.basename(chunk["file"])
+            )
+            print(f"[DEDUP] Dropped duplicate: {chunk['name']} "
+                  f"(from {os.path.basename(chunk['file'])}, "
+                  f"kept {os.path.basename(unique[seen[key]]['file'])})")
+        else:
+            seen[key] = len(unique)
+            unique.append(chunk)
+
+    if len(chunks) != len(unique):
+        print(f"[DEDUP] {len(chunks)} -> {len(unique)}  "
+              f"({len(chunks) - len(unique)} duplicates removed)")
+    return unique
 
 
 # =============================================================================
@@ -194,10 +268,14 @@ def load_hierarchical_repo(repo_path):
             rel_path  = os.path.relpath(file_path, repo_path)
             print(f"[RAG]   Parsing: {rel_path}")
 
-            all_chunks.extend(parse_python_file(file_path))
+            all_chunks.extend(parse_python_file(file_path, repo_path))
             file_count += 1
 
     print(f"[RAG] Parsed {file_count} files -> {len(all_chunks)} chunks")
+
+    # ── Deduplicate near-identical chunks ─────────────────────────────────
+    all_chunks = dedup_chunks(all_chunks)
+
     return all_chunks
 
 
@@ -212,16 +290,24 @@ def build_reverse_index(chunks):
     Complexity: O(chunks × avg_calls) — typically fast for project-sized repos.
     """
     # name → list of chunk indices (same name may appear in multiple files)
-    name_to_indices = defaultdict(list)
+    # Use qname (qualified) for precise resolution, but also index by bare
+    # name so callee lookup (which only knows bare names) still works.
+    qname_to_indices = defaultdict(list)
+    name_to_indices  = defaultdict(list)
     for i, chunk in enumerate(chunks):
+        qname_to_indices[chunk["qname"]].append(i)
         name_to_indices[chunk["name"]].append(i)
 
     for i, chunk in enumerate(chunks):
+        caller_file = chunk["file"]
         caller_name = chunk["name"]
         for callee_name in chunk["calls"]:
-            for j in name_to_indices[callee_name]:
-                if j != i:                          # don't self-reference
-                    chunks[j]["called_by"].append(caller_name)
+            # Prefer same-file match, then fall back to any match
+            candidates = name_to_indices[callee_name]
+            same_file  = [j for j in candidates if chunks[j]["file"] == caller_file and j != i]
+            targets    = same_file if same_file else [j for j in candidates if j != i]
+            for j in targets:
+                chunks[j]["called_by"].append(caller_name)
 
     # Deduplicate (a caller may appear many times if it's a large class)
     for chunk in chunks:
@@ -249,9 +335,11 @@ class RAGCodebaseAgent:
         # ── Build reverse index (called_by) ─────────────────────────────────
         build_reverse_index(self.documents)
 
-        # ── Name → chunk index lookup (for graph expansion) ──────────────────
-        self._name_index = defaultdict(list)
+        # ── Qualified name + bare name indexes (for graph expansion) ────────
+        self._qname_index = defaultdict(list)
+        self._name_index  = defaultdict(list)
         for i, doc in enumerate(self.documents):
+            self._qname_index[doc["qname"]].append(i)
             self._name_index[doc["name"]].append(i)
 
         self.chunks   = [d["content"] for d in self.documents]
@@ -428,6 +516,8 @@ class RAGCodebaseAgent:
             lines.append(f"# decorators: {', '.join(meta['decorators'])}")
         if meta.get("docstring"):
             lines.append(f"# doc: {meta['docstring'][:120]}")
+        if meta.get("also_in"):
+            lines.append(f"# also_in: {', '.join(meta['also_in'])}")
 
         return "\n".join(lines)
 

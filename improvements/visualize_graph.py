@@ -33,16 +33,15 @@ OUTPUT_HTML = os.path.join(os.path.dirname(__file__), "chunk_graph.html")
 
 def build_graph(chunks):
     """
-    Nodes  – one per chunk  (name, type, file, docstring)
-    Edges  – three relationship types:
-               'calls'       caller → callee
-               'inherits'    subclass → base class
-               'in_file'     chunk → file  (optional, toggle in UI)
+    Nodes  - one per chunk  (qname as identity, deduped)
+    Edges  - two relationship types:
+               'calls'       caller -> callee  (same-file-first heuristic)
+               'inherits'    subclass -> base class
     """
     nodes = []
     edges = []
 
-    # Index chunk name → node id (use chunk index as id)
+    # Index chunk name -> node ids (bare name, for callee resolution)
     name_to_ids = {}
     for i, c in enumerate(chunks):
         name_to_ids.setdefault(c["name"], []).append(i)
@@ -51,11 +50,13 @@ def build_graph(chunks):
         nodes.append({
             "id":       i,
             "name":     c["name"],
+            "qname":    c.get("qname", c["name"]),
             "type":     c["type"],
             "file":     os.path.basename(c["file"]),
             "doc":      c.get("docstring", "")[:80],
             "methods":  c.get("methods", []),
             "bases":    c.get("base_classes", []),
+            "also_in":  c.get("also_in", []),
         })
 
     edge_set = set()
@@ -67,11 +68,15 @@ def build_graph(chunks):
             edges.append({"source": src, "target": tgt, "kind": kind})
 
     for i, c in enumerate(chunks):
-        # calls edges
+        caller_file = c["file"]
+
+        # calls edges — prefer same-file targets
         for callee in c.get("calls", []):
-            for j in name_to_ids.get(callee, []):
-                if j != i:
-                    add_edge(i, j, "calls")
+            candidates = name_to_ids.get(callee, [])
+            same_file  = [j for j in candidates if chunks[j]["file"] == caller_file and j != i]
+            targets    = same_file if same_file else [j for j in candidates if j != i]
+            for j in targets:
+                add_edge(i, j, "calls")
 
         # inheritance edges
         for base in c.get("base_classes", []):
@@ -262,6 +267,7 @@ function showTip(event, d) {
     <span style="color:#8b949e;font-size:10px">${d.file}</span><br>`;
   if (d.bases  && d.bases.length)   html += `<br>extends: <em>${d.bases.join(", ")}</em>`;
   if (d.methods && d.methods.length) html += `<br>methods: ${d.methods.slice(0,6).join(", ")}`;
+  if (d.also_in && d.also_in.length) html += `<br><span style="color:#f0883e">also in: ${d.also_in.join(", ")}</span>`;
   if (d.doc)  html += `<br><span style="color:#8b949e">${d.doc}</span>`;
   tip.innerHTML = html;
   tip.style.display = "block";
