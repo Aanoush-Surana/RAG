@@ -34,8 +34,10 @@ def _get_docstring(node):
 def _get_calls(node):
     """
     Return the set of function/method names directly called inside `node`.
-    Only simple name calls (foo()) and attribute calls (self.foo(), obj.bar())
-    are captured — we record the leaf name only, e.g. 'bar' for obj.bar().
+    Captures:
+      • Simple name calls: foo()  -> 'foo'
+      • Attribute calls:   obj.bar() -> 'bar'
+      • Class instantiations: Bat("x") -> 'Bat'  (ast.Name with uppercase)
     """
     calls = set()
     for n in ast.walk(node):
@@ -287,27 +289,45 @@ def build_reverse_index(chunks):
     For every chunk B that chunk A calls, append A's name to B's `called_by`.
     This is done in-place so chunk dicts are mutated.
 
-    Complexity: O(chunks × avg_calls) — typically fast for project-sized repos.
+    Two resolution strategies:
+      1. Direct name match  – callee name matches a chunk's own name
+         (handles: top-level functions, class instantiations like Bat(...))
+      2. Method-owner match – callee name is listed in a class chunk's `methods`
+         (handles: method calls like bat.special(), zoo.add_animal())
+         Same-file class chunks are preferred over cross-file ones.
     """
-    # name → list of chunk indices (same name may appear in multiple files)
-    # Use qname (qualified) for precise resolution, but also index by bare
-    # name so callee lookup (which only knows bare names) still works.
-    qname_to_indices = defaultdict(list)
-    name_to_indices  = defaultdict(list)
+    name_to_indices   = defaultdict(list)   # chunk name  -> [indices]
+    method_to_classes = defaultdict(list)   # method name -> [class chunk indices]
+
     for i, chunk in enumerate(chunks):
-        qname_to_indices[chunk["qname"]].append(i)
         name_to_indices[chunk["name"]].append(i)
+        if chunk["type"] == "class":
+            for method in chunk.get("methods", []):
+                method_to_classes[method].append(i)
 
     for i, chunk in enumerate(chunks):
         caller_file = chunk["file"]
         caller_name = chunk["name"]
+        resolved    = set()   # indices already credited for this caller
+
         for callee_name in chunk["calls"]:
-            # Prefer same-file match, then fall back to any match
+            # ── Strategy 1: direct chunk name match ──────────────────────────
             candidates = name_to_indices[callee_name]
-            same_file  = [j for j in candidates if chunks[j]["file"] == caller_file and j != i]
+            same_file  = [j for j in candidates
+                          if chunks[j]["file"] == caller_file and j != i]
             targets    = same_file if same_file else [j for j in candidates if j != i]
+
+            # ── Strategy 2: method-owner match (fallback) ────────────────────
+            if not targets:
+                owners     = method_to_classes[callee_name]
+                same_file2 = [j for j in owners
+                               if chunks[j]["file"] == caller_file and j != i]
+                targets    = same_file2 if same_file2 else [j for j in owners if j != i]
+
             for j in targets:
-                chunks[j]["called_by"].append(caller_name)
+                if j not in resolved:
+                    resolved.add(j)
+                    chunks[j]["called_by"].append(caller_name)
 
     # Deduplicate (a caller may appear many times if it's a large class)
     for chunk in chunks:

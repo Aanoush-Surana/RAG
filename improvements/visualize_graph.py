@@ -59,6 +59,13 @@ def build_graph(chunks):
             "also_in":  c.get("also_in", []),
         })
 
+    # Build method-to-class index: method name -> list of class chunk indices
+    method_to_class_ids = {}
+    for i, c in enumerate(chunks):
+        if c["type"] == "class":
+            for method in c.get("methods", []):
+                method_to_class_ids.setdefault(method, []).append(i)
+
     edge_set = set()
 
     def add_edge(src, tgt, kind):
@@ -72,9 +79,17 @@ def build_graph(chunks):
 
         # calls edges — prefer same-file targets
         for callee in c.get("calls", []):
+            # Strategy 1: direct chunk-name match
             candidates = name_to_ids.get(callee, [])
             same_file  = [j for j in candidates if chunks[j]["file"] == caller_file and j != i]
             targets    = same_file if same_file else [j for j in candidates if j != i]
+
+            # Strategy 2: method-owner match (for obj.method() style calls)
+            if not targets:
+                owners     = method_to_class_ids.get(callee, [])
+                same_file2 = [j for j in owners if chunks[j]["file"] == caller_file and j != i]
+                targets    = same_file2 if same_file2 else [j for j in owners if j != i]
+
             for j in targets:
                 add_edge(i, j, "calls")
 

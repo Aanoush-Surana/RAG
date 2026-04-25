@@ -97,152 +97,90 @@ const GRAPH = {
   "nodes": [
     {
       "id": 0,
-      "name": "ensure_dirs",
-      "qname": "hacksagon_p2/main.py::ensure_dirs",
-      "type": "function",
-      "file": "main.py",
-      "doc": "Ensure that all data directories exist.",
-      "methods": [],
+      "name": "Animal",
+      "qname": "test_inheritance.py::Animal",
+      "type": "class",
+      "file": "test_inheritance.py",
+      "doc": "",
+      "methods": [
+        "__init__",
+        "speak",
+        "info"
+      ],
       "bases": [],
       "also_in": []
     },
     {
       "id": 1,
-      "name": "load_config",
-      "qname": "hacksagon_p2/main.py::load_config",
-      "type": "function",
-      "file": "main.py",
+      "name": "Mammal",
+      "qname": "test_inheritance.py::Mammal",
+      "type": "class",
+      "file": "test_inheritance.py",
       "doc": "",
-      "methods": [],
-      "bases": [],
+      "methods": [
+        "speak",
+        "walk"
+      ],
+      "bases": [
+        "Animal"
+      ],
       "also_in": []
     },
     {
       "id": 2,
-      "name": "run_pipeline",
-      "qname": "hacksagon_p2/main.py::run_pipeline",
-      "type": "function",
-      "file": "main.py",
+      "name": "Bird",
+      "qname": "test_inheritance.py::Bird",
+      "type": "class",
+      "file": "test_inheritance.py",
       "doc": "",
-      "methods": [],
-      "bases": [],
+      "methods": [
+        "speak",
+        "fly"
+      ],
+      "bases": [
+        "Animal"
+      ],
       "also_in": []
     },
     {
       "id": 3,
-      "name": "get_rgb",
-      "qname": "hacksagon_p2/new_testbed.py::get_rgb",
-      "type": "function",
-      "file": "new_testbed.py",
+      "name": "Bat",
+      "qname": "test_inheritance.py::Bat",
+      "type": "class",
+      "file": "test_inheritance.py",
       "doc": "",
-      "methods": [],
-      "bases": [],
+      "methods": [
+        "speak",
+        "special"
+      ],
+      "bases": [
+        "Mammal",
+        "Bird"
+      ],
       "also_in": []
     },
     {
       "id": 4,
-      "name": "enhance_contrast",
-      "qname": "hacksagon_p2/preprocessor.py::enhance_contrast",
-      "type": "function",
-      "file": "preprocessor.py",
+      "name": "Zoo",
+      "qname": "test_inheritance.py::Zoo",
+      "type": "class",
+      "file": "test_inheritance.py",
       "doc": "",
-      "methods": [],
+      "methods": [
+        "__init__",
+        "add_animal",
+        "show_animals"
+      ],
       "bases": [],
-      "also_in": [
-        "BasicPreprocessor.py"
-      ]
+      "also_in": []
     },
     {
       "id": 5,
-      "name": "preprocess_frame",
-      "qname": "hacksagon_p2/preprocessor.py::preprocess_frame",
+      "name": "run_zoo",
+      "qname": "test_inheritance.py::run_zoo",
       "type": "function",
-      "file": "preprocessor.py",
+      "file": "test_inheritance.py",
       "doc": "",
-      "methods": [],
-      "bases": [],
-      "also_in": [
-        "BasicPreprocessor.py"
-      ]
-    },
-    {
-      "id": 6,
-      "name": "preprocessing_image",
-      "qname": "hacksagon_p2/preprocessor.py::preprocessing_image",
-      "type": "function",
-      "file": "preprocessor.py",
-      "doc": "Applies preprocessing to a single image.\n    Accepts either a file path (string)",
-      "methods": [],
-      "bases": [],
-      "also_in": []
-    },
-    {
-      "id": 7,
-      "name": "preprocessing_stream",
-      "qname": "hacksagon_p2/preprocessor.py::preprocessing_stream",
-      "type": "function",
-      "file": "preprocessor.py",
-      "doc": "",
-      "methods": [],
-      "bases": [],
-      "also_in": [
-        "BasicPreprocessor.py"
-      ]
-    },
-    {
-      "id": 8,
-      "name": "Preprocessor",
-      "qname": "hacksagon_p2/modules/preprocess/cleaner.py::Preprocessor",
-      "type": "class",
-      "file": "cleaner.py",
-      "doc": "",
-      "methods": [
-        "__init__",
-        "enhance_contrast",
-        "apply_filters",
-        "process_frame",
-        "process_video",
-        "stream"
-      ],
-      "bases": [],
-      "also_in": []
-    },
-    {
-      "id": 9,
-      "name": "SegmentationModel",
-      "qname": "hacksagon_p2/modules/segmentation/inference.py::SegmentationModel",
-      "type": "class",
-      "file": "inference.py",
-      "doc": "",
-      "methods": [
-        "__init__",
-        "get_colour",
-        "process_frame"
-      ],
-      "bases": [],
-      "also_in": []
-    },
-    {
-      "id": 10,
-      "name": "TrackerModule",
-      "qname": "hacksagon_p2/modules/tracking/tracker.py::TrackerModule",
-      "type": "class",
-      "file": "tracker.py",
-      "doc": "",
-      "methods": [
-        "__init__",
-        "process_frame"
-      ],
-      "bases": [],
-      "also_in": []
-    },
-    {
-      "id": 11,
-      "name": "preprocessing_image",
-      "qname": "hacksagon_p2/Preprocessing/BasicPreprocessor.py::preprocessing_image",
-      "type": "function",
-      "file": "BasicPreprocessor.py",
-      "doc": "Applies preprocessing to a single image.\n    Accepts either a file path (string)",
       "methods": [],
       "bases": [],
       "also_in": []
@@ -250,48 +188,58 @@ const GRAPH = {
   ],
   "edges": [
     {
-      "source": 2,
-      "target": 8,
-      "kind": "calls"
-    },
-    {
-      "source": 2,
-      "target": 9,
-      "kind": "calls"
-    },
-    {
-      "source": 2,
-      "target": 10,
-      "kind": "calls"
+      "source": 1,
+      "target": 0,
+      "kind": "inherits"
     },
     {
       "source": 2,
       "target": 0,
+      "kind": "inherits"
+    },
+    {
+      "source": 3,
+      "target": 2,
       "kind": "calls"
     },
     {
-      "source": 7,
+      "source": 3,
+      "target": 1,
+      "kind": "calls"
+    },
+    {
+      "source": 3,
+      "target": 1,
+      "kind": "inherits"
+    },
+    {
+      "source": 3,
+      "target": 2,
+      "kind": "inherits"
+    },
+    {
+      "source": 4,
+      "target": 0,
+      "kind": "calls"
+    },
+    {
+      "source": 4,
+      "target": 1,
+      "kind": "calls"
+    },
+    {
+      "source": 4,
+      "target": 2,
+      "kind": "calls"
+    },
+    {
+      "source": 4,
+      "target": 3,
+      "kind": "calls"
+    },
+    {
+      "source": 5,
       "target": 4,
-      "kind": "calls"
-    },
-    {
-      "source": 7,
-      "target": 5,
-      "kind": "calls"
-    },
-    {
-      "source": 8,
-      "target": 4,
-      "kind": "calls"
-    },
-    {
-      "source": 11,
-      "target": 4,
-      "kind": "calls"
-    },
-    {
-      "source": 11,
-      "target": 5,
       "kind": "calls"
     }
   ]
