@@ -176,6 +176,17 @@ const GRAPH = {
     },
     {
       "id": 5,
+      "name": "create_bat",
+      "qname": "test_inheritance.py::create_bat",
+      "type": "function",
+      "file": "test_inheritance.py",
+      "doc": "",
+      "methods": [],
+      "bases": [],
+      "also_in": []
+    },
+    {
+      "id": 6,
       "name": "run_zoo",
       "qname": "test_inheritance.py::run_zoo",
       "type": "function",
@@ -239,7 +250,17 @@ const GRAPH = {
     },
     {
       "source": 5,
+      "target": 3,
+      "kind": "calls"
+    },
+    {
+      "source": 6,
       "target": 4,
+      "kind": "calls"
+    },
+    {
+      "source": 6,
+      "target": 5,
       "kind": "calls"
     }
   ]

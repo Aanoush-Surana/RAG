@@ -74,17 +74,20 @@ def build_graph(chunks):
             edge_set.add(key)
             edges.append({"source": src, "target": tgt, "kind": kind})
 
+    # Build qname-to-id index for called_by resolution
+    qname_to_id = {c.get("qname", c["name"]): i for i, c in enumerate(chunks)}
+
     for i, c in enumerate(chunks):
         caller_file = c["file"]
 
-        # calls edges — prefer same-file targets
+        # calls edges — prefer same-file targets, fall back to any match
         for callee in c.get("calls", []):
-            # Strategy 1: direct chunk-name match
+            # Strategy 1: direct chunk-name match (same-file first, then any file)
             candidates = name_to_ids.get(callee, [])
             same_file  = [j for j in candidates if chunks[j]["file"] == caller_file and j != i]
             targets    = same_file if same_file else [j for j in candidates if j != i]
 
-            # Strategy 2: method-owner match (for obj.method() style calls)
+            # Strategy 2: method-owner match (for obj.method() or self.method() calls)
             if not targets:
                 owners     = method_to_class_ids.get(callee, [])
                 same_file2 = [j for j in owners if chunks[j]["file"] == caller_file and j != i]
@@ -92,6 +95,12 @@ def build_graph(chunks):
 
             for j in targets:
                 add_edge(i, j, "calls")
+
+        # called_by reverse edges — draw dashed 'called_by' as a 'calls' edge in reverse
+        for caller_qname in c.get("called_by", []):
+            j = qname_to_id.get(caller_qname)
+            if j is not None and j != i:
+                add_edge(j, i, "calls")   # caller -> this chunk
 
         # inheritance edges
         for base in c.get("base_classes", []):
@@ -332,7 +341,7 @@ window.addEventListener("resize", () => sim.force("center", d3.forceCenter(W()/2
 def main():
     print(f"[Graph] Parsing repo: {REPO_PATH}")
     chunks = load_hierarchical_repo(REPO_PATH)
-    chunks = [c for c in chunks if len(c["content"]) > 80]
+    chunks = [c for c in chunks if len(c["content"]) > 10]
 
     if not chunks:
         print("[Graph] No chunks found — check REPO_PATH.")

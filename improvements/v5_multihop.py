@@ -1,28 +1,28 @@
 """
-v5_multihop.py  –  Code-Aware RAG with Full Multi-Hop Graph Traversal
-======================================================================
+v5_multihop.py  -  Code-Aware RAG with Full Multi-Hop Graph Traversal
+
 Builds on v4_metadata.py and replaces the fixed 1-hop graph expansion
 with a configurable BFS that follows the complete call-chain /
 inheritance chain to an arbitrary depth.
 
 Key additions over v4
-─────────────────────
+
 • _expand_with_graph_multihop()
-    – BFS over (base_classes ∪ calls) edges, optionally (called_by) too
-    – Configurable max_hops  (default 3)
-    – Configurable max_expansion  (default 8 extra chunks)
-    – Returns (content, meta, hop_distance) triples
+     BFS over (base_classes + calls) edges, optionally (called_by) too
+     Configurable max_hops  (default 3)
+     Configurable max_expansion  (default 8 extra chunks)
+     Returns (content, meta, hop_distance) triples
 
 • retrieve() returns (chunk, meta, hop) triples
-    – hop = 0  →  retrieved directly by vector search
-    – hop ≥ 1  →  reached by graph traversal
+     hop = 0  →  retrieved directly by vector search
+     hop ≥ 1  →  reached by graph traversal
 
 • _build_header() shows [hop=N] so the LLM knows provenance distance
 
 • query() applies hop-weighted token budgeting
-    – hop-0 chunks get CONTEXT_CHARS_PER_CHUNK chars
-    – each extra hop halves the budget (floor at MIN_CHARS_PER_CHUNK)
-    – keeps the LLM prompt focused on the most relevant code
+     hop-0 chunks get CONTEXT_CHARS_PER_CHUNK chars
+     each extra hop halves the budget (floor at MIN_CHARS_PER_CHUNK)
+     keeps the LLM prompt focused on the most relevant code
 """
 
 import ast
@@ -33,19 +33,12 @@ from collections import defaultdict, deque
 
 import numpy as np
 
-# =============================================================================
-# DIRECTORIES TO SKIP
-# =============================================================================
 SKIP_DIRS = {
     "venv", ".venv", "env", ".env",
     ".git", "__pycache__", ".mypy_cache", ".pytest_cache",
     "node_modules", "dist", "build", "site-packages",
     ".tox", "eggs", ".eggs",
 }
-
-# =============================================================================
-# AST HELPERS  (unchanged from v4)
-# =============================================================================
 
 def _get_docstring(node):
     """Extract the first docstring from a function or class node, if any."""
@@ -115,9 +108,6 @@ def _get_methods(class_node):
     ]
 
 
-# =============================================================================
-# CONTENT HASH  (unchanged from v4)
-# =============================================================================
 def _content_hash(code_text):
     text = re.sub(r'#[^\n]*', '', code_text)
     text = re.sub(r'\s+', ' ', text).strip()
@@ -132,9 +122,6 @@ def _make_qname(file_path, name, repo_path=None):
     return f"{rel}::{name}"
 
 
-# =============================================================================
-# PARSER  (unchanged from v4)
-# =============================================================================
 def parse_python_file(file_path, repo_path=None):
     try:
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -157,7 +144,7 @@ def parse_python_file(file_path, repo_path=None):
 
     for node in tree.body:
         segment = ast.get_source_segment(code, node)
-        if not segment or len(segment) < 60:
+        if not segment or len(segment) < 10:
             continue
 
         if isinstance(node, ast.ClassDef):
@@ -214,9 +201,6 @@ def parse_python_file(file_path, repo_path=None):
     }]
 
 
-# =============================================================================
-# CONTENT-HASH DEDUPLICATION  (unchanged from v4)
-# =============================================================================
 def dedup_chunks(chunks):
     seen   = {}
     unique = []
@@ -238,9 +222,6 @@ def dedup_chunks(chunks):
     return unique
 
 
-# =============================================================================
-# REPO LOADER  (unchanged from v4)
-# =============================================================================
 def load_hierarchical_repo(repo_path):
     all_chunks = []
     file_count = 0
@@ -261,10 +242,6 @@ def load_hierarchical_repo(repo_path):
     all_chunks = dedup_chunks(all_chunks)
     return all_chunks
 
-
-# =============================================================================
-# REVERSE INDEX  (unchanged from v4)
-# =============================================================================
 def build_reverse_index(chunks):
     name_to_indices   = defaultdict(list)
     method_to_classes = defaultdict(list)
@@ -302,9 +279,6 @@ def build_reverse_index(chunks):
     print("[RAG] Reverse index built (called_by populated).")
 
 
-# =============================================================================
-# RAG AGENT  –  v5: multi-hop graph traversal
-# =============================================================================
 class RAGCodebaseAgent:
 
     # Token budget (chars) for hop-0 (directly retrieved) chunks
@@ -360,18 +334,12 @@ class RAGCodebaseAgent:
         self.llm.eval()
         print("[RAG] Ready.\n")
 
-    # =========================================================================
-    # v2: keyword filter  (unchanged)
-    # =========================================================================
     def keyword_filter(self, query, results):
         """Filter (chunk, meta, hop) triples by query keywords."""
         keywords = query.lower().split()
         filtered = [r for r in results if any(k in r[0].lower() for k in keywords)]
         return filtered if filtered else results
 
-    # =========================================================================
-    # v3: clean_chunk  (unchanged)
-    # =========================================================================
     def clean_chunk(self, chunk, query):
         lines    = chunk.split("\n")
         keywords = query.lower().split()
@@ -392,9 +360,6 @@ class RAGCodebaseAgent:
 
         return "\n".join(cleaned) if len(cleaned) >= 3 else "\n".join(lines[:10])
 
-    # =========================================================================
-    # v5: MULTI-HOP BFS graph expansion  ← core new feature
-    # =========================================================================
     def _expand_with_graph_multihop(
         self,
         retrieved_indices,
@@ -484,9 +449,6 @@ class RAGCodebaseAgent:
 
         return expanded
 
-    # =========================================================================
-    # Retrieve  –  returns (chunk, meta, hop) triples
-    # =========================================================================
     def retrieve(self, query, k=4, max_hops=3, max_expansion=8,
                  include_callers=False):
         """
@@ -548,9 +510,6 @@ class RAGCodebaseAgent:
 
         return results   # list of (chunk, meta, hop)
 
-    # =========================================================================
-    # Build enriched LLM header  –  now shows hop distance
-    # =========================================================================
     @staticmethod
     def _build_header(meta, hop: int = 0):
         """
@@ -581,9 +540,6 @@ class RAGCodebaseAgent:
 
         return "\n".join(lines)
 
-    # =========================================================================
-    # LLM call  (unchanged from v4)
-    # =========================================================================
     def run_llm(self, context, query):
         import torch
 
@@ -710,7 +666,6 @@ if __name__ == "__main__":
     agent = RAGCodebaseAgent(repo_path)
 
     # ── Example 1: default multi-hop (depth 3, forward edges only) ──────────
-    print("\n" + "="*60)
     print("DEMO 1 — full call-chain traversal (max_hops=3)")
     agent.query(
         "What classes inherit from a base class and what do they call?",
@@ -719,7 +674,6 @@ if __name__ == "__main__":
     )
 
     # ── Example 2: include upstream callers too ──────────────────────────────
-    print("\n" + "="*60)
     print("DEMO 2 — forward + backward traversal (include_callers=True)")
     agent.query(
         "Which functions call the data processing logic?",
@@ -729,7 +683,6 @@ if __name__ == "__main__":
     )
 
     # ── Example 3: disable graph expansion (pure vector RAG baseline) ────────
-    print("\n" + "="*60)
     print("DEMO 3 — no graph expansion (max_hops=0, baseline)")
     agent.query(
         "How is data processed?",
@@ -737,7 +690,6 @@ if __name__ == "__main__":
     )
 
     # ── Example 4: shallow single-hop (v4 equivalent) ────────────────────────
-    print("\n" + "="*60)
     print("DEMO 4 — 1-hop only (v4 equivalent)")
     agent.query(
         "Explain the main architecture",
