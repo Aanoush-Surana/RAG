@@ -399,30 +399,25 @@ class RAGCodebaseAgent:
         if max_hops == 0:
             return []
 
-        # BFS queue entries: (chunk_index, hop_distance)
         frontier: deque = deque()
         seen: set       = set(retrieved_indices)
-        expanded        = []          # (content, meta, hop)
+        expanded        = []
 
-        # Seed the frontier with every directly-retrieved chunk
         for idx in retrieved_indices:
             frontier.append((idx, 0))
 
         while frontier and len(expanded) < max_expansion:
             idx, hop = frontier.popleft()
 
-            # Don't expand beyond the depth limit
             if hop >= max_hops:
                 continue
 
             meta = self.metadata[idx]
 
-            # ── Collect neighbour names ────────────────────────────────────
             neighbor_names = list(meta["base_classes"]) + list(meta["calls"])
             if include_callers:
                 neighbor_names += list(meta["called_by"])
 
-            # ── Resolve names → chunk indices ──────────────────────────────
             for name in neighbor_names:
                 for neighbor_idx in self._name_index.get(name, []):
                     if neighbor_idx in seen:

@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Graph-RAG: Codebase AI Assistant</title>
+  <!-- Google Fonts & Prism Code Highlighting -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg-dark: #090d13;
+      --panel-bg: #121824;
+      --panel-header: #1b2435;
+      --border-color: #27354f;
+      --text-main: #e6edf3;
+      --text-muted: #8b949e;
+      --accent-blue: #388bfd;
+      --accent-green: #3fb950;
+      --accent-orange: #f78166;
+      --accent-purple: #d2a8ff;
+      --accent-cyan: #56e3e0;
+      --transition-speed: 0.25s;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      font-family: 'Outfit', sans-serif;
+      color: var(--text-main);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Top navbar */
+    header {
+      background-color: var(--panel-header);
+      border-bottom: 1px solid var(--border-color);
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      z-index: 10;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      font-size: 24px;
+      animation: pulse 2s infinite ease-in-out;
+    }
+
+    .logo-text {
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: 0.5px;
+      background: linear-gradient(45deg, var(--accent-blue), var(--accent-cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .ingest-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    input[type="text"], input[type="password"], select {
+      background-color: rgba(9, 13, 19, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      color: var(--text-main);
+      padding: 8px 12px;
+      font-size: 13px;
+      transition: all var(--transition-speed);
+      outline: none;
+    }
+
+    input[type="text"]:focus, input[type="password"]:focus, select:focus {
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 8px rgba(56, 139, 253, 0.4);
+    }
+
+    .btn {
+      background-color: var(--accent-blue);
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-weight: 500;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all var(--transition-speed);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn:hover {
+      background-color: #58a6ff;
+      transform: translateY(-1px);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn-secondary {
+      background-color: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover {
+      background-color: rgba(39, 53, 79, 0.4);
+      border-color: var(--accent-blue);
+    }
+
+    /* Main body layout */
+    .container {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 56px);
+      overflow: hidden;
+    }
+
+    /* Left pane: chat & parameters */
+    .left-pane {
+      width: 450px;
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      background-color: rgba(18, 24, 36, 0.4);
+    }
+
+    /* Query config / parameters */
+    .config-panel {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      background-color: rgba(27, 36, 53, 0.2);
+    }
+
+    .config-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .config-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .config-field label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Chat Messages Box */
+    .chat-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .msg {
+      max-width: 85%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      line-height: 1.5;
+      font-size: 14px;
+      word-wrap: break-word;
+      animation: fadeInUp 0.3s ease;
+    }
+
+    .msg-user {
+      align-self: flex-end;
+      background-color: var(--accent-blue);
+      color: #ffffff;
+      border-bottom-right-radius: 2px;
+    }
+
+    .msg-bot {
+      align-self: flex-start;
+      background-color: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      border-bottom-left-radius: 2px;
+    }
+
+    .msg-bot pre {
+      margin-top: 10px;
+      background-color: rgba(9, 13, 19, 0.8) !important;
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+
+    .msg-bot code {
+      font-family: 'Fira Code', monospace;
+      font-size: 12px;
+    }
+
+    .citations-header {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-top: 12px;
+      border-top: 1px dashed var(--border-color);
+      padding-top: 8px;
+    }
+
+    .citation-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .citation-badge {
+      background-color: rgba(56, 139, 253, 0.15);
+      border: 1px solid rgba(56, 139, 253, 0.3);
+      border-radius: 4px;
+      color: var(--accent-blue);
+      font-size: 11px;
+      padding: 2px 6px;
+      cursor: pointer;
+      transition: all var(--transition-speed);
+      font-family: 'Fira Code', monospace;
+    }
+
+    .citation-badge:hover {
+      background-color: var(--accent-blue);
+      color: #ffffff;
+    }
+
+    .citation-badge.hop-1, .citation-badge.hop-2, .citation-badge.hop-3 {
+      background-color: rgba(210, 168, 255, 0.15);
+      border-color: rgba(210, 168, 255, 0.3);
+      color: var(--accent-purple);
+    }
+
+    .citation-badge.hop-1:hover, .citation-badge.hop-2:hover, .citation-badge.hop-3:hover {
+      background-color: var(--accent-purple);
+      color: #000;
+    }
+
+    /* Input area at the bottom */
+    .input-area {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border-color);
+      background-color: rgba(18, 24, 36, 0.8);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .input-area textarea {
+      flex: 1;
+      height: 40px;
+      background-color: rgba(9, 13, 19, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      color: var(--text-main);
+      padding: 10px 12px;
+      font-size: 13px;
+      resize: none;
+      outline: none;
+      font-family: inherit;
+      transition: all var(--transition-speed);
+    }
+
+    .input-area textarea:focus {
+      border-color: var(--accent-blue);
+      height: 60px;
+    }
+
+    /* Right pane: visualizer & code tabs */
+    .right-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background-color: var(--bg-dark);
+    }
+
+    /* Tab navigation */
+    .tabs {
+      display: flex;
+      background-color: var(--panel-header);
+      border-bottom: 1px solid var(--border-color);
+      height: 44px;
+    }
+
+    .tab {
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 13px;
+      color: var(--text-muted);
+      border-right: 1px solid var(--border-color);
+      transition: all var(--transition-speed);
+    }
+
+    .tab:hover {
+      background-color: rgba(27, 36, 53, 0.4);
+      color: var(--text-main);
+    }
+
+    .tab.active {
+      background-color: var(--panel-bg);
+      color: var(--accent-blue);
+      border-top: 2px solid var(--accent-blue);
+    }
+
+    /* Tab content area */
+    .tab-content {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .tab-pane {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: none;
+    }
+
+    .tab-pane.active {
+      display: block;
+    }
+
+    /* Code graph panel elements */
+    #graph-container {
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(#151d2e 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+
+    .graph-tooltip {
+      position: absolute;
+      background: var(--panel-header);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 12px;
+      max-width: 300px;
+      pointer-events: none;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      z-index: 5;
+      display: none;
+    }
+
+    /* Code viewer panel elements */
+    .code-viewer-container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .code-header {
+      background-color: var(--panel-header);
+      border-bottom: 1px solid var(--border-color);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .code-title {
+      font-family: 'Fira Code', monospace;
+      font-size: 13px;
+      color: var(--accent-cyan);
+    }
+
+    .code-body {
+      flex: 1;
+      overflow: auto;
+      background-color: #0b0f19;
+      padding: 20px;
+    }
+
+    .code-body pre {
+      margin: 0;
+      background: transparent !important;
+    }
+
+    /* Legend / Stats overlay */
+    .legend-overlay {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(18, 24, 36, 0.95);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    /* Loader */
+    .loader {
+      border: 3px solid rgba(56, 139, 253, 0.2);
+      border-top: 3px solid var(--accent-blue);
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 0.9; }
+      50% { transform: scale(1.1); opacity: 1; }
+      100% { transform: scale(1); opacity: 0.9; }
+    }
+
+    @keyframes fadeInUp {
+      from { transform: translateY(10px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+  </style>
+</head>
+<body class="line-numbers">
+
+  <header>
+    <div class="logo-container">
+      <span class="logo-icon">🔗</span>
+      <span class="logo-text">Graph-RAG Visualizer</span>
+    </div>
+    
+    <div class="ingest-box">
+      <input type="text" id="repo-path" placeholder="C:\Path\To\Repository" style="width: 260px;" value="C:\Users\Aanoush Surana\OneDrive\Desktop\BTP\data\sample_repo">
+      <div style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted);">
+        <input type="checkbox" id="force-reindex" style="accent-color: var(--accent-blue);">
+        <label for="force-reindex" style="cursor: pointer; user-select: none;">Force Reindex</label>
+      </div>
+      <button class="btn" id="btn-ingest" onclick="ingestRepo()">
+        <span>Ingest Repo</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="container">
+    
+    <!-- Left Pane: Chat & Config -->
+    <div class="left-pane">
+      
+      <!-- Query / Retrieval parameters -->
+      <div class="config-panel">
+        <div class="config-row">
+          <div class="config-field">
+            <label for="param-k">Top-K Vector</label>
+            <select id="param-k">
+              <option value="3">3</option>
+              <option value="4" selected>4</option>
+              <option value="6">6</option>
+              <option value="8">8</option>
+            </select>
+          </div>
+          <div class="config-field">
+            <label for="param-hops">Max Graph Hops</label>
+            <select id="param-hops">
+              <option value="0">0 (No Graph)</option>
+              <option value="1">1 Hop</option>
+              <option value="2">2 Hops</option>
+              <option value="3" selected>3 Hops</option>
+              <option value="4">4 Hops</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="config-row">
+          <div class="config-field">
+            <label for="param-expansion">Max Expansion Nodes</label>
+            <select id="param-expansion">
+              <option value="4">4 Chunks</option>
+              <option value="6" selected>6 Chunks</option>
+              <option value="8">8 Chunks</option>
+              <option value="12">12 Chunks</option>
+            </select>
+          </div>
+          <div class="config-field" style="display: flex; flex-direction: row; align-items: center; gap: 8px; margin-top: 16px;">
+            <input type="checkbox" id="param-callers" style="accent-color: var(--accent-blue);">
+            <label for="param-callers" style="cursor: pointer; user-select: none;">Include Callers</label>
+          </div>
+        </div>
+
+        <div class="config-field" style="margin-top: 6px;">
+          <label for="gemini-api-key">Gemini API Key (Optional)</label>
+          <input type="password" id="gemini-api-key" placeholder="AIzaSy... (leave blank to use local Qwen LLM)" style="width: 100%;">
+        </div>
+      </div>
+
+      <!-- Chat panel -->
+      <div class="chat-container" id="chat-box">
+        <div class="msg msg-bot">
+          Hello! Set your repository path in the header and click <strong>Ingest Repo</strong>. 
+          Once ingested, you can ask structured questions about classes, methods, and call flows.
+        </div>
+      </div>
+
+      <!-- Input box -->
+      <div class="input-area">
+        <textarea id="query-input" placeholder="Ask a question about the codebase..." onkeydown="handleEnter(event)"></textarea>
+        <button class="btn" id="btn-send" onclick="sendQuery()">Send</button>
+      </div>
+
+    </div>
+
+    <!-- Right Pane: Visualization Tabs -->
+    <div class="right-pane">
+      
+      <div class="tabs">
+        <div class="tab active" id="tab-graph" onclick="switchTab('graph')">Code Relationship Graph</div>
+        <div class="tab" id="tab-code" onclick="switchTab('code')">Code Viewer</div>
+      </div>
+
+      <div class="tab-content">
+        
+        <!-- Tab 1: D3 Interactive Graph -->
+        <div class="tab-pane active" id="pane-graph">
+          <svg id="graph-container"></svg>
+          <div class="graph-tooltip" id="graph-tooltip"></div>
+          
+          <div class="legend-overlay">
+            <h4 style="margin-bottom: 4px; font-size: 12px; color: var(--accent-cyan)">Graph Legend</h4>
+            <div class="legend-item">
+              <div class="legend-dot" style="background-color: var(--accent-blue)"></div>
+              <span>Class Node</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-dot" style="background-color: var(--accent-green)"></div>
+              <span>Function Node</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-dot" style="background-color: var(--accent-purple)"></div>
+              <span>File Module</span>
+            </div>
+            <div class="legend-item" style="margin-top: 4px; border-top: 1px solid var(--border-color); padding-top: 4px;">
+              <span style="color: var(--accent-green)">─→</span>
+              <span>Calls Link</span>
+            </div>
+            <div class="legend-item">
+              <span style="color: var(--accent-orange)">─→</span>
+              <span>Inherits Link</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Syntax Highlighted Code Viewer -->
+        <div class="tab-pane" id="pane-code">
+          <div class="code-viewer-container">
+            <div class="code-header">
+              <span class="code-title" id="code-viewer-filename">No file loaded</span>
+              <span style="font-size: 11px; color: var(--text-muted)">Code Viewer</span>
+            </div>
+            <div class="code-body">
+              <pre><code id="code-block" class="language-python"># Select a file or click a citation to view code here.</code></pre>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- D3.js and Prism libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+
+  <script>
+    let graphData = { nodes: [], edges: [] };
+    let d3Simulation = null;
+    let currentSelectedNodeId = null;
+
+    // Tab switcher
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+
+      document.getElementById(`tab-${tabName}`).classList.add('active');
+      document.getElementById(`pane-${tabName}`).classList.add('active');
+    }
+
+    // Ingest codebase api
+    async function ingestRepo() {
+      const repoPath = document.getElementById('repo-path').value.trim();
+      const forceReindex = document.getElementById('force-reindex').checked;
+      if (!repoPath) {
+        alert('Please enter a valid directory path.');
+        return;
+      }
+
+      const btn = document.getElementById('btn-ingest');
+      btn.disabled = true;
+      btn.innerHTML = `<span class="loader"></span> <span>Ingesting...</span>`;
+
+      try {
+        const response = await fetch('http://127.0.0.1:8000/api/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repo_path: repoPath, force_reindex: forceReindex })
+        });
+        
+        const data = await response.json();
+        if (response.ok) {
+          addBotMessage(`Successfully ingested repository! Found <strong>${data.chunk_count}</strong> code segments/chunks.`);
+          // Load D3 Graph
+          await fetchGraphAndRender();
+        } else {
+          addBotMessage(`Ingestion failed: ${data.detail}`);
+        }
+      } catch (err) {
+        addBotMessage(`Error: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Ingest Repo';
+      }
+    }
+
+    // Fetch and render D3 force directed graph
+    async function fetchGraphAndRender() {
+      try {
+        const response = await fetch('http://127.0.0.1:8000/api/graph');
+        graphData = await response.json();
+        renderGraph(graphData);
+      } catch (err) {
+        console.error('Error fetching graph:', err);
+      }
+    }
+
+    function renderGraph(data) {
+      const svg = d3.select("#graph-container");
+      svg.selectAll("*").remove(); // Clear previous drawing
+      
+      const width = document.getElementById('pane-graph').clientWidth;
+      const height = document.getElementById('pane-graph').clientHeight;
+      
+      const g = svg.append("g");
+      const tooltip = document.getElementById("graph-tooltip");
+
+      // Zoom
+      svg.call(d3.zoom().scaleExtent([0.1, 5]).on("zoom", (e) => {
+        g.attr("transform", e.transform);
+      }));
+
+      // Direct Arrow Markers
+      const defs = svg.append("defs");
+      ["calls", "inherits"].forEach(kind => {
+        const color = kind === "calls" ? "var(--accent-green)" : "var(--accent-orange)";
+        defs.append("marker")
+          .attr("id", `arrow-${kind}`)
+          .attr("viewBox", "0 -5 10 10")
+          .attr("refX", 18)
+          .attr("refY", 0)
+          .attr("markerWidth", 6)
+          .attr("markerHeight", 6)
+          .attr("orient", "auto")
+          .append("path")
+          .attr("d", "M0,-5L10,0L0,5")
+          .attr("fill", color);
+      });
+
+      // Simulation forces
+      d3Simulation = d3.forceSimulation(data.nodes)
+        .force("link", d3.forceLink(data.edges).id(d => d.id).distance(120).strength(0.8))
+        .force("charge", d3.forceManyBody().strength(-250))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("collide", d3.forceCollide(30));
+
+      // Draw Links
+      const link = g.append("g")
+        .selectAll("line")
+        .data(data.edges)
+        .enter()
+        .append("line")
+        .attr("stroke", d => d.kind === "calls" ? "var(--accent-green)" : "var(--accent-orange)")
+        .attr("stroke-opacity", 0.4)
+        .attr("stroke-width", 1.5)
+        .attr("marker-end", d => `url(#arrow-${d.kind})`);
+
+      // Draw Nodes
+      const node = g.append("g")
+        .selectAll("g")
+        .data(data.nodes)
+        .enter()
+        .append("g")
+        .attr("cursor", "pointer")
+        .call(d3.drag()
+          .on("start", (e, d) => {
+            if (!e.active) d3Simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+          })
+          .on("drag", (e, d) => {
+            d.fx = e.x;
+            d.fy = e.y;
+          })
+          .on("end", (e, d) => {
+            if (!e.active) d3Simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+          }));
+
+      // Circle representing code entity
+      node.append("circle")
+        .attr("r", d => d.type === "class" ? 12 : 9)
+        .attr("fill", d => {
+          if (d.type === "class") return "var(--accent-blue)";
+          if (d.type === "function") return "var(--accent-green)";
+          return "var(--accent-purple)";
+        })
+        .attr("stroke", "var(--border-color)")
+        .attr("stroke-width", 2);
+
+      // Node labels
+      node.append("text")
+        .attr("dy", d => d.type === "class" ? 22 : 18)
+        .attr("text-anchor", "middle")
+        .attr("fill", "var(--text-main)")
+        .attr("font-size", "10px")
+        .text(d => d.name);
+
+      // Mouse actions
+      node.on("mouseover", (e, d) => {
+        tooltip.innerHTML = `
+          <strong>${d.name}</strong> (${d.type})<br/>
+          <span style="color: var(--accent-cyan); font-size:10px;">${d.file}</span><br/>
+          ${d.doc ? `<p style="margin-top:6px; color:var(--text-muted); font-size:11px;">${d.doc}</p>` : ''}
+        `;
+        tooltip.style.display = "block";
+        tooltip.style.left = (e.pageX + 10) + "px";
+        tooltip.style.top = (e.pageY + 10) + "px";
+      })
+      .on("mousemove", (e) => {
+        tooltip.style.left = (e.pageX + 10) + "px";
+        tooltip.style.top = (e.pageY + 10) + "px";
+      })
+      .on("mouseout", () => {
+        tooltip.style.display = "none";
+      })
+      .on("click", (e, d) => {
+        highlightNode(d.id);
+        loadFile(d.full_path, d.name);
+      });
+
+      d3Simulation.on("tick", () => {
+        link
+          .attr("x1", d => d.source.x)
+          .attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x)
+          .attr("y2", d => d.target.y);
+
+        node.attr("transform", d => `translate(${d.x},${d.y})`);
+      });
+    }
+
+    // Highlight node in graph
+    function highlightNode(nodeId) {
+      currentSelectedNodeId = nodeId;
+      d3.selectAll(".right-pane circle")
+        .attr("stroke", d => d.id === nodeId ? "#ffffff" : "var(--border-color)")
+        .attr("stroke-width", d => d.id === nodeId ? 3.5 : 2)
+        .attr("r", d => {
+          let base = d.type === "class" ? 12 : 9;
+          return d.id === nodeId ? base + 3 : base;
+        });
+    }
+
+    // Zoom/Center on a specific symbol's node
+    function focusSymbol(symbolName) {
+      if (!graphData.nodes) return;
+      const target = graphData.nodes.find(n => n.name.toLowerCase() === symbolName.toLowerCase());
+      if (target) {
+        switchTab('graph');
+        highlightNode(target.id);
+        
+        // D3 zoom transition to center target node
+        const svg = d3.select("#graph-container");
+        const width = document.getElementById('pane-graph').clientWidth;
+        const height = document.getElementById('pane-graph').clientHeight;
+        
+        svg.transition().duration(750).call(
+          d3.zoom().transform,
+          d3.zoomIdentity.translate(width / 2 - target.x, height / 2 - target.y).scale(1.5)
+        );
+      }
+    }
+
+    // Load file contents into code viewer
+    async function loadFile(filePath, highlightSymbol = null) {
+      const codeTitle = document.getElementById('code-viewer-filename');
+      codeTitle.innerText = filePath.split(/[\\/]/).pop() + (highlightSymbol ? ` > ${highlightSymbol}` : '');
+      
+      try {
+        const response = await fetch('http://127.0.0.1:8000/api/file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file_path: filePath })
+        });
+        const data = await response.json();
+        
+        const codeBlock = document.getElementById('code-block');
+        
+        // Escape HTML
+        let escaped = data.content
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+          
+        codeBlock.innerHTML = escaped;
+        Prism.highlightElement(codeBlock);
+        switchTab('code');
+
+        // Scroll to highlighted symbol if requested
+        if (highlightSymbol) {
+          setTimeout(() => {
+            const lines = data.content.split('\n');
+            let matchedLine = -1;
+            for (let i = 0; i < lines.length; i++) {
+              if (lines[i].includes(`class ${highlightSymbol}`) || lines[i].includes(`def ${highlightSymbol}`)) {
+                matchedLine = i;
+                break;
+              }
+            }
+            if (matchedLine !== -1) {
+              // Approximate scroll position
+              const body = document.querySelector('.code-body');
+              const totalHeight = body.scrollHeight;
+              const targetScroll = (matchedLine / lines.length) * totalHeight - 100;
+              body.scrollTo({ top: targetScroll, behavior: 'smooth' });
+            }
+          }, 300);
+        }
+
+      } catch (err) {
+        console.error('Error loading file:', err);
+      }
+    }
+
+    // Chat handling
+    function handleEnter(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendQuery();
+      }
+    }
+
+    function addBotMessage(htmlContent, citations = []) {
+      const chatBox = document.getElementById('chat-box');
+      const msg = document.createElement('div');
+      msg.className = 'msg msg-bot';
+      msg.innerHTML = htmlContent;
+
+      if (citations && citations.length > 0) {
+        const citeHead = document.createElement('div');
+        citeHead.className = 'citations-header';
+        citeHead.innerText = 'Retrieved Code Context:';
+        msg.appendChild(citeHead);
+
+        const list = document.createElement('div');
+        list.className = 'citation-list';
+        
+        citations.forEach(c => {
+          const badge = document.createElement('span');
+          badge.className = `citation-badge hop-${c.hop}`;
+          badge.innerHTML = `[${c.hop === 0 ? 'direct' : 'hop-' + c.hop}] ${c.name}`;
+          badge.onclick = () => {
+            focusSymbol(c.name);
+            loadFile(c.full_path, c.name);
+          };
+          list.appendChild(badge);
+        });
+        msg.appendChild(list);
+      }
+
+      chatBox.appendChild(msg);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function addUserMessage(text) {
+      const chatBox = document.getElementById('chat-box');
+      const msg = document.createElement('div');
+      msg.className = 'msg msg-user';
+      msg.innerText = text;
+      chatBox.appendChild(msg);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // Highlight the nodes and links matching citation results
+    function highlightCitationsInGraph(citations) {
+      if (!citations || citations.length === 0) return;
+      
+      const citationNames = new Set(citations.map(c => c.name.toLowerCase()));
+      const citationHops = {};
+      citations.forEach(c => {
+        citationHops[c.name.toLowerCase()] = c.hop;
+      });
+      
+      // Update nodes styling
+      d3.selectAll("#graph-container circle")
+        .transition().duration(500)
+        .attr("stroke", d => {
+          const nameLower = d.name.toLowerCase();
+          if (citationNames.has(nameLower)) {
+            const hop = citationHops[nameLower];
+            return hop === 0 ? "var(--accent-cyan)" : "var(--accent-purple)";
+          }
+          return "var(--border-color)";
+        })
+        .attr("stroke-width", d => {
+          const nameLower = d.name.toLowerCase();
+          return citationNames.has(nameLower) ? 4 : 2;
+        })
+        .attr("r", d => {
+          const nameLower = d.name.toLowerCase();
+          const base = d.type === "class" ? 12 : 9;
+          return citationNames.has(nameLower) ? base + 4 : base;
+        });
+
+      // Update link styling to highlight linkages among citations
+      d3.selectAll("#graph-container line")
+        .transition().duration(500)
+        .attr("stroke-opacity", d => {
+          const sName = d.source.name.toLowerCase();
+          const tName = d.target.name.toLowerCase();
+          if (citationNames.has(sName) && citationNames.has(tName)) {
+            return 0.95;
+          }
+          return 0.2;
+        })
+        .attr("stroke-width", d => {
+          const sName = d.source.name.toLowerCase();
+          const tName = d.target.name.toLowerCase();
+          if (citationNames.has(sName) && citationNames.has(tName)) {
+            return 2.5;
+          }
+          return 1.5;
+        });
+    }
+
+    async function sendQuery() {
+      const queryInput = document.getElementById('query-input');
+      const query = queryInput.value.trim();
+      if (!query) return;
+
+      addUserMessage(query);
+      queryInput.value = '';
+
+      // Get configs
+      const k = parseInt(document.getElementById('param-k').value);
+      const hops = parseInt(document.getElementById('param-hops').value);
+      const expansion = parseInt(document.getElementById('param-expansion').value);
+      const callers = document.getElementById('param-callers').checked;
+      const apiKey = document.getElementById('gemini-api-key').value.trim();
+
+      // Show temporary loader message
+      const chatBox = document.getElementById('chat-box');
+      const loaderMsg = document.createElement('div');
+      loaderMsg.className = 'msg msg-bot';
+      loaderMsg.id = 'temp-loader';
+      loaderMsg.innerHTML = `<span class="loader"></span> Running codebase RAG...`;
+      chatBox.appendChild(loaderMsg);
+      chatBox.scrollTop = chatBox.scrollHeight;
+
+      try {
+        const response = await fetch('http://127.0.0.1:8000/api/query/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: query,
+            api_key: apiKey || "",
+            k: k,
+            max_hops: hops,
+            max_expansion: expansion,
+            include_callers: callers
+          })
+        });
+
+        loaderMsg.remove(); // Remove loader
+
+        if (!response.ok) {
+          const errData = await response.json();
+          addBotMessage(`Query failed: ${errData.detail}`);
+          return;
+        }
+
+        // Create the bot message container that we will stream into
+        const botMsg = document.createElement('div');
+        botMsg.className = 'msg msg-bot';
+        botMsg.id = 'streaming-msg';
+        chatBox.appendChild(botMsg);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+        let citations = [];
+        let fullAnswer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          // Keep the last split part in buffer because it might be incomplete
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const parsed = JSON.parse(line);
+              if (parsed.type === "citations") {
+                citations = parsed.data;
+                highlightCitationsInGraph(citations);
+              } else if (parsed.type === "content") {
+                fullAnswer += parsed.data;
+                
+                // Format the current text content to HTML dynamically
+                let formattedText = fullAnswer
+                  .replace(/&/g, "&amp;")
+                  .replace(/</g, "&lt;")
+                  .replace(/>/g, "&gt;")
+                  .replace(/```python([\s\S]*?)```/g, '<pre><code class="language-python">$1</code></pre>')
+                  .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+                  .replace(/`([^`]+)`/g, '<code>$1</code>')
+                  .replace(/\n/g, '<br/>');
+
+                botMsg.innerHTML = formattedText;
+                chatBox.scrollTop = chatBox.scrollHeight;
+              }
+            } catch (e) {
+              console.error("Error parsing streaming line:", e);
+            }
+          }
+        }
+
+        // Handle any leftover buffer content
+        if (buffer.trim()) {
+          try {
+            const parsed = JSON.parse(buffer);
+            if (parsed.type === "citations") {
+              citations = parsed.data;
+              highlightCitationsInGraph(citations);
+            } else if (parsed.type === "content") {
+              fullAnswer += parsed.data;
+            }
+          } catch (e) {}
+        }
+
+        // Finalize formatting
+        let formattedText = fullAnswer
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/```python([\s\S]*?)```/g, '<pre><code class="language-python">$1</code></pre>')
+          .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+          .replace(/`([^`]+)`/g, '<code>$1</code>')
+          .replace(/\n/g, '<br/>');
+
+        botMsg.innerHTML = formattedText;
+
+        // Render Citations section
+        if (citations && citations.length > 0) {
+          const citeHead = document.createElement('div');
+          citeHead.className = 'citations-header';
+          citeHead.innerText = 'Retrieved Code Context:';
+          botMsg.appendChild(citeHead);
+
+          const list = document.createElement('div');
+          list.className = 'citation-list';
+          
+          citations.forEach(c => {
+            const badge = document.createElement('span');
+            badge.className = `citation-badge hop-${c.hop}`;
+            badge.innerHTML = `[${c.hop === 0 ? 'direct' : 'hop-' + c.hop}] ${c.name}`;
+            badge.onclick = () => {
+              focusSymbol(c.name);
+              loadFile(c.full_path, c.name);
+            };
+            list.appendChild(badge);
+          });
+          botMsg.appendChild(list);
+        }
+
+        Prism.highlightAllUnder(botMsg);
+        botMsg.removeAttribute('id');
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+      } catch (err) {
+        if (document.getElementById('temp-loader')) {
+          document.getElementById('temp-loader').remove();
+        }
+        addBotMessage(`Error connecting to server: ${err.message}`);
+      }
+    }
+  </script>
+</body>
+</html>
